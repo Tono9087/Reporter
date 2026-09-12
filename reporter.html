@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Images to PDF</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#1c1b19;
+    --paper:#fbfaf7;
+    --line:#d8d3c8;
+    --accent:#3d5a45;
+    --accent-ink:#fbfaf7;
+    --muted:#8a8478;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Georgia',serif;
+    background:var(--paper);
+    color:var(--ink);
+    padding:40px 20px 100px;
+  }
+  h1{
+    font-size:28px;
+    font-weight:400;
+    letter-spacing:.3px;
+    margin:0 0 4px;
+  }
+  .sub{
+    color:var(--muted);
+    font-family:Arial,Helvetica,sans-serif;
+    font-size:13px;
+    margin:0 0 32px;
+  }
+  .wrap{max-width:720px;margin:0 auto;}
+  .activity{
+    border:1px solid var(--line);
+    border-radius:2px;
+    margin-bottom:20px;
+    background:white;
+  }
+  .activity-head{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:14px 16px;
+    border-bottom:1px solid var(--line);
+  }
+  .activity-head input[type=text]{
+    flex:1;
+    font-family:Georgia,serif;
+    font-size:16px;
+    border:none;
+    border-bottom:1px solid transparent;
+    padding:4px 2px;
+    background:transparent;
+    color:var(--ink);
+  }
+  .activity-head input[type=text]:focus{
+    outline:none;
+    border-bottom:1px solid var(--accent);
+  }
+  .remove-act{
+    font-family:Arial,sans-serif;
+    font-size:12px;
+    color:var(--muted);
+    background:none;
+    border:1px solid var(--line);
+    border-radius:2px;
+    padding:4px 8px;
+    cursor:pointer;
+  }
+  .remove-act:hover{border-color:#b33;color:#b33;}
+  .activity-body{padding:12px 16px 16px;}
+  .drop{
+    border:1px dashed var(--line);
+    border-radius:2px;
+    padding:14px;
+    text-align:center;
+    font-family:Arial,sans-serif;
+    font-size:13px;
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .drop.drag{border-color:var(--accent);color:var(--accent);}
+  .thumbs{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:12px;
+  }
+  .thumb{
+    position:relative;
+    width:72px;height:72px;
+    border:1px solid var(--line);
+    overflow:hidden;
+    border-radius:2px;
+  }
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .thumb .x{
+    position:absolute;top:0;right:0;
+    background:rgba(0,0,0,.6);
+    color:#fff;
+    font-family:Arial,sans-serif;
+    font-size:11px;
+    width:16px;height:16px;
+    line-height:16px;
+    text-align:center;
+    cursor:pointer;
+  }
+  .add-activity{
+    font-family:Arial,sans-serif;
+    font-size:13px;
+    color:var(--accent);
+    background:none;
+    border:1px solid var(--accent);
+    border-radius:2px;
+    padding:8px 14px;
+    cursor:pointer;
+    margin-bottom:24px;
+  }
+  .actions{
+    position:sticky;
+    bottom:0;
+    background:var(--paper);
+    padding:16px 0 0;
+    border-top:1px solid var(--line);
+    margin-top:10px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+  }
+  #generate{
+    font-family:Arial,sans-serif;
+    font-size:14px;
+    background:var(--accent);
+    color:var(--accent-ink);
+    border:none;
+    border-radius:2px;
+    padding:12px 22px;
+    cursor:pointer;
+  }
+  #generate:disabled{opacity:.5;cursor:default;}
+  #status{
+    font-family:Arial,sans-serif;
+    font-size:12px;
+    color:var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Images to PDF</h1>
+  <p class="sub">Group images into activities. Each activity gets a title page, then its images.</p>
+
+  <div id="activities"></div>
+  <button class="add-activity" id="addActivity">+ Add activity</button>
+
+  <div class="actions">
+    <button id="generate">Generate PDF</button>
+    <span id="status"></span>
+  </div>
+</div>
+
+<script>
+let activities = [];
+let counter = 0;
+
+function addActivity(){
+  const id = counter++;
+  activities.push({id, title:'Activity ' + activities.length, files:[]});
+  render();
+}
+
+function removeActivity(id){
+  activities = activities.filter(a=>a.id!==id);
+  render();
+}
+
+function addFiles(id, fileList){
+  const act = activities.find(a=>a.id===id);
+  for(const f of fileList){
+    if(f.type.startsWith('image/')) act.files.push(f);
+  }
+  render();
+}
+
+function removeFile(id, idx){
+  const act = activities.find(a=>a.id===id);
+  act.files.splice(idx,1);
+  render();
+}
+
+function render(){
+  const wrap = document.getElementById('activities');
+  wrap.innerHTML = '';
+  activities.forEach(act=>{
+    const div = document.createElement('div');
+    div.className = 'activity';
+
+    const head = document.createElement('div');
+    head.className = 'activity-head';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = act.title;
+    input.oninput = e => act.title = e.target.value;
+    const rm = document.createElement('button');
+    rm.className = 'remove-act';
+    rm.textContent = 'Remove';
+    rm.onclick = ()=>removeActivity(act.id);
+    head.appendChild(input);
+    head.appendChild(rm);
+
+    const body = document.createElement('div');
+    body.className = 'activity-body';
+
+    const drop = document.createElement('div');
+    drop.className = 'drop';
+    drop.textContent = 'Click or drop images here';
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.multiple = true;
+    fileInput.style.display = 'none';
+    fileInput.onchange = e => { addFiles(act.id, e.target.files); fileInput.value=''; };
+    drop.onclick = ()=>fileInput.click();
+    drop.ondragover = e => { e.preventDefault(); drop.classList.add('drag'); };
+    drop.ondragleave = ()=>drop.classList.remove('drag');
+    drop.ondrop = e => {
+      e.preventDefault();
+      drop.classList.remove('drag');
+      addFiles(act.id, e.dataTransfer.files);
+    };
+
+    body.appendChild(drop);
+    body.appendChild(fileInput);
+
+    if(act.files.length){
+      const thumbs = document.createElement('div');
+      thumbs.className = 'thumbs';
+      act.files.forEach((f,idx)=>{
+        const t = document.createElement('div');
+        t.className = 'thumb';
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(f);
+        const x = document.createElement('div');
+        x.className = 'x';
+        x.textContent = '×';
+        x.onclick = ()=>removeFile(act.id, idx);
+        t.appendChild(img);
+        t.appendChild(x);
+        thumbs.appendChild(t);
+      });
+      body.appendChild(thumbs);
+    }
+
+    div.appendChild(head);
+    div.appendChild(body);
+    wrap.appendChild(div);
+  });
+}
+
+document.getElementById('addActivity').onclick = addActivity;
+addActivity();
+
+function loadImage(file){
+  return new Promise((resolve,reject)=>{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+document.getElementById('generate').onclick = async ()=>{
+  const status = document.getElementById('status');
+  const btn = document.getElementById('generate');
+  const withImages = activities.filter(a=>a.files.length);
+  if(!withImages.length){
+    status.textContent = 'Add at least one image.';
+    return;
+  }
+  btn.disabled = true;
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({unit:'pt', format:'a4'});
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  let first = true;
+
+  for(const act of withImages){
+    status.textContent = 'Adding: ' + act.title;
+    if(!first) pdf.addPage();
+    first = false;
+
+    // Title/divider page
+    pdf.setFont('helvetica','normal');
+    pdf.setFontSize(28);
+    pdf.setTextColor(30,30,30);
+    const lines = pdf.splitTextToSize(act.title, pageW - 120);
+    const totalH = lines.length * 34;
+    let y = (pageH - totalH) / 2;
+    lines.forEach(line=>{
+      pdf.text(line, pageW/2, y, {align:'center'});
+      y += 34;
+    });
+
+    for(const file of act.files){
+      pdf.addPage();
+      try{
+        const img = await loadImage(file);
+        const margin = 30;
+        const maxW = pageW - margin*2;
+        const maxH = pageH - margin*2;
+        let w = img.width, h = img.height;
+        const scale = Math.min(maxW/w, maxH/h);
+        w *= scale; h *= scale;
+        const x = (pageW - w)/2;
+        const y2 = (pageH - h)/2;
+        const fmt = /png/i.test(file.type) ? 'PNG' : 'JPEG';
+        // draw onto canvas to normalize any format (incl. webp/gif/bmp/svg)
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img,0,0);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        pdf.addImage(dataUrl, 'JPEG', x, y2, w, h);
+      }catch(err){
+        pdf.setFontSize(12);
+        pdf.text('Could not load: ' + file.name, 40, 60);
+      }
+    }
+  }
+
+  pdf.save('activities.pdf');
+  status.textContent = 'Done.';
+  btn.disabled = false;
+};
+</script>
+</body>
+</html>
