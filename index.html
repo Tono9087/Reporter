@@ -61,6 +61,44 @@
     outline:none;
     border-bottom:1px solid var(--accent);
   }
+  .activity-format{
+    font-family:Arial,Helvetica,sans-serif;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .design-label{display:block;margin-bottom:8px;}
+  .design-options{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+  .design-option{
+    border:1px solid var(--line);
+    border-radius:2px;
+    padding:6px;
+    background:#fff;
+    color:var(--ink);
+    cursor:pointer;
+    text-align:left;
+    font:11px Arial,sans-serif;
+  }
+  .design-option:hover{border-color:var(--accent);}
+  .design-option.selected{border:2px solid var(--accent);padding:5px;color:var(--accent);}
+  .design-swatch{
+    height:58px;
+    margin-bottom:5px;
+    border:1px solid #e2ddd3;
+    position:relative;
+    overflow:hidden;
+    background:#fbfaf7;
+  }
+  .design-swatch span{display:block;position:absolute;}
+  .swatch-minimal:before{content:'';position:absolute;inset:8px;border:1px solid #d4cec4;}
+  .swatch-minimal span{top:27px;left:20%;right:20%;height:4px;background:#4c614f;}
+  .swatch-banner span:first-child{inset:0 0 auto;height:19px;background:#1c302a;}
+  .swatch-banner span:last-child{inset:auto 0 0;height:12px;background:#416251;}
+  .swatch-card:before{content:'';position:absolute;inset:7px;border:2px solid #d6d0c4;border-radius:5px;}
+  .swatch-card span{inset:15px 18px;background:#f5f0e9;border-radius:4px;}
+  .swatch-grid{background:repeating-linear-gradient(90deg,#fbfaf7 0,#fbfaf7 14px,#dcd6ca 15px),repeating-linear-gradient(0deg,transparent 0,transparent 14px,#dcd6ca 15px);}
+  .swatch-grid span{inset:8px;border:1px solid #2c3b34;}
+  .swatch-classic:before,.swatch-classic:after{content:'';position:absolute;left:10px;right:10px;border-top:2px solid #415243;}
+  .swatch-classic:before{top:13px}.swatch-classic:after{bottom:13px}
   .remove-act{
     font-family:Arial,sans-serif;
     font-size:12px;
@@ -147,10 +185,21 @@
     font-size:12px;
     color:var(--muted);
   }
+  #editor[hidden],#preview[hidden]{display:none;}
+  .preview-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px;}
+  .preview-head h2{font-size:22px;font-weight:400;margin:0;}
+  .preview-actions{display:flex;gap:10px;}
+  .preview-actions button{
+    font:13px Arial,sans-serif;padding:10px 15px;border:1px solid var(--accent);
+    border-radius:2px;cursor:pointer;background:transparent;color:var(--accent);
+  }
+  .preview-actions #download{background:var(--accent);color:var(--accent-ink);}
+  .preview-frame{width:100%;height:70vh;min-height:480px;border:1px solid var(--line);background:#eee;}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <section id="editor">
   <h1>Images to PDF</h1>
   <p class="sub">Group images into activities. Each activity gets a title page, then its images.</p>
 
@@ -161,20 +210,44 @@
     <button id="generate">Generate PDF</button>
     <span id="status"></span>
   </div>
+  </section>
+  <section id="preview" hidden>
+  <div class="preview-head">
+    <div>
+      <h2>Preview your PDF</h2>
+      <p class="sub">Review the layout before downloading your finished report.</p>
+    </div>
+    <div class="preview-actions">
+      <button id="backToEdit">Back to edit</button>
+      <button id="download">Download PDF</button>
+    </div>
+  </div>
+  <iframe class="preview-frame" id="previewFrame" title="PDF preview"></iframe>
+  </section>
 </div>
 
 <script>
 let activities = [];
 let counter = 0;
+let previewUrl = null;
+
+const dividerOptions = [
+  {value:'minimal', label:'Minimal'},
+  {value:'banner', label:'Banner'},
+  {value:'card', label:'Card'},
+  {value:'grid', label:'Grid'},
+  {value:'classic', label:'Classic'}
+];
 
 function addActivity(){
   const id = counter++;
-  activities.push({id, title:'Activity ' + activities.length, files:[]});
+  activities.push({id, title:'Activity ' + (activities.length + 1), files:[], design:'minimal'});
   render();
 }
 
 function removeActivity(id){
   activities = activities.filter(a=>a.id!==id);
+  activities.forEach((act, idx)=>{ act.title = act.title || 'Activity ' + (idx + 1); if(!act.title.startsWith('Activity')) act.title = 'Activity ' + (idx + 1); });
   render();
 }
 
@@ -195,7 +268,7 @@ function removeFile(id, idx){
 function render(){
   const wrap = document.getElementById('activities');
   wrap.innerHTML = '';
-  activities.forEach(act=>{
+  activities.forEach((act, idx)=>{
     const div = document.createElement('div');
     div.className = 'activity';
 
@@ -205,6 +278,7 @@ function render(){
     input.type = 'text';
     input.value = act.title;
     input.oninput = e => act.title = e.target.value;
+
     const rm = document.createElement('button');
     rm.className = 'remove-act';
     rm.textContent = 'Remove';
@@ -214,6 +288,37 @@ function render(){
 
     const body = document.createElement('div');
     body.className = 'activity-body';
+
+    const formatWrap = document.createElement('div');
+    formatWrap.className = 'activity-format';
+    const label = document.createElement('span');
+    label.className = 'design-label';
+    label.textContent = 'Choose a design';
+    formatWrap.appendChild(label);
+    const options = document.createElement('div');
+    options.className = 'design-options';
+    dividerOptions.forEach(opt => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'design-option' + (act.design === opt.value ? ' selected' : '');
+      option.setAttribute('aria-pressed', act.design === opt.value ? 'true' : 'false');
+      const swatch = document.createElement('span');
+      swatch.className = 'design-swatch swatch-' + opt.value;
+      if(opt.value === 'banner'){
+        swatch.appendChild(document.createElement('span'));
+        swatch.appendChild(document.createElement('span'));
+      } else {
+        swatch.appendChild(document.createElement('span'));
+      }
+      const name = document.createElement('span');
+      name.textContent = opt.label;
+      option.appendChild(swatch);
+      option.appendChild(name);
+      option.onclick = () => { act.design = opt.value; render(); };
+      options.appendChild(option);
+    });
+    formatWrap.appendChild(options);
+    body.appendChild(formatWrap);
 
     const drop = document.createElement('div');
     drop.className = 'drop';
@@ -261,6 +366,115 @@ function render(){
   });
 }
 
+function drawDividerPage(pdf, act, index, pageW, pageH) {
+  const title = (act.title || 'Activity').trim() || 'Activity';
+  const activityNo = 'ACTIVITY ' + (index + 1);
+  const pagePad = 44;
+
+  pdf.setFillColor(251, 250, 247);
+  pdf.rect(0, 0, pageW, pageH, 'F');
+
+  switch(act.design){
+    case 'banner': {
+      pdf.setFillColor(28, 48, 42);
+      pdf.rect(0, 0, pageW, 110, 'F');
+      pdf.setFillColor(65, 98, 81);
+      pdf.rect(0, pageH - 82, pageW, 82, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(18);
+      pdf.text(activityNo, pageW / 2, 42, {align:'center'});
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(30);
+      const lines = pdf.splitTextToSize(title, pageW - 120);
+      const yStart = pageH / 2 - ((lines.length - 1) * 24) / 2;
+      pdf.text(lines, pageW / 2, yStart, {align:'center'});
+      pdf.setDrawColor(255, 255, 255);
+      pdf.setLineWidth(1.2);
+      pdf.line(pagePad, pageH - 118, pageW - pagePad, pageH - 118);
+      break;
+    }
+    case 'card': {
+      pdf.setDrawColor(214, 208, 196);
+      pdf.setLineWidth(1.6);
+      pdf.roundedRect(pagePad, pagePad + 18, pageW - pagePad * 2, pageH - (pagePad * 2) - 36, 22, 22, 'S');
+      pdf.setFillColor(245, 240, 233);
+      pdf.roundedRect(pagePad + 18, pagePad + 38, pageW - pagePad * 2 - 36, pageH - (pagePad * 2) - 76, 18, 18, 'F');
+      pdf.setFillColor(31, 54, 44);
+      pdf.roundedRect(pagePad + 34, pagePad + 62, 120, 28, 8, 8, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.text(activityNo, pagePad + 52, pagePad + 82, {align:'left'});
+      pdf.setTextColor(28, 27, 25);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(31);
+      const lines = pdf.splitTextToSize(title, pageW - pagePad * 3 - 50);
+      const yStart = pageH / 2 - ((lines.length - 1) * 26) / 2 + 8;
+      pdf.text(lines, pageW / 2, yStart, {align:'center'});
+      break;
+    }
+    case 'grid': {
+      pdf.setDrawColor(212, 205, 191);
+      pdf.setLineWidth(0.8);
+      for(let x = 50; x < pageW - 50; x += 50) pdf.line(x, 40, x, pageH - 40);
+      for(let y = 40; y < pageH - 40; y += 50) pdf.line(40, y, pageW - 40, y);
+      pdf.setDrawColor(44, 59, 52);
+      pdf.setLineWidth(1.5);
+      pdf.rect(52, 52, pageW - 104, pageH - 104, 'S');
+      pdf.setFillColor(255, 255, 255);
+      pdf.roundedRect(pageW / 2 - 75, 80, 150, 26, 10, 10, 'F');
+      pdf.setTextColor(28, 27, 25);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text(activityNo, pageW / 2, 98, {align:'center'});
+      pdf.setFont('times', 'bold');
+      pdf.setFontSize(34);
+      const lines = pdf.splitTextToSize(title, pageW - 180);
+      const yStart = pageH / 2 - ((lines.length - 1) * 24) / 2;
+      pdf.text(lines, pageW / 2, yStart, {align:'center'});
+      break;
+    }
+    case 'classic': {
+      pdf.setDrawColor(65, 82, 67);
+      pdf.setLineWidth(1.5);
+      pdf.line(68, 72, pageW - 68, 72);
+      pdf.line(68, pageH - 72, pageW - 68, pageH - 72);
+      pdf.setDrawColor(168, 157, 142);
+      pdf.line(82, 92, 82, pageH - 92);
+      pdf.setTextColor(27, 29, 28);
+      pdf.setFont('times', 'bolditalic');
+      pdf.setFontSize(15);
+      pdf.text('Study log', 98, 98);
+      pdf.setFont('times', 'bold');
+      pdf.setFontSize(34);
+      const lines = pdf.splitTextToSize(title, pageW - 220);
+      const yStart = pageH / 2 - ((lines.length - 1) * 28) / 2;
+      pdf.text(lines, pageW / 2, yStart, {align:'center'});
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(12);
+      pdf.setTextColor(92, 92, 92);
+      pdf.text(activityNo, pageW / 2, pageH - 94, {align:'center'});
+      break;
+    }
+    default: {
+      pdf.setDrawColor(212, 206, 196);
+      pdf.setLineWidth(1.2);
+      pdf.rect(42, 42, pageW - 84, pageH - 84, 'S');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.setTextColor(76, 97, 79);
+      pdf.text(activityNo, pageW / 2, 92, {align:'center'});
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(30);
+      const lines = pdf.splitTextToSize(title, pageW - 140);
+      const yStart = pageH / 2 - ((lines.length - 1) * 24) / 2;
+      pdf.text(lines, pageW / 2, yStart, {align:'center'});
+      break;
+    }
+  }
+}
+
 document.getElementById('addActivity').onclick = addActivity;
 addActivity();
 
@@ -287,25 +501,11 @@ document.getElementById('generate').onclick = async ()=>{
   const pdf = new jsPDF({unit:'pt', format:'a4'});
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  let first = true;
 
-  for(const act of withImages){
+  for(const [index, act] of withImages.entries()){
     status.textContent = 'Adding: ' + act.title;
-    if(!first) pdf.addPage();
-    first = false;
-
-    // Title/divider page
-    pdf.setFont('helvetica','normal');
-    pdf.setFontSize(28);
-    pdf.setTextColor(30,30,30);
-    const lines = pdf.splitTextToSize(act.title, pageW - 120);
-    const totalH = lines.length * 34;
-    let y = (pageH - totalH) / 2;
-    lines.forEach(line=>{
-      pdf.text(line, pageW/2, y, {align:'center'});
-      y += 34;
-    });
-
+    if(index > 0) pdf.addPage();
+    drawDividerPage(pdf, act, activities.findIndex(item => item.id === act.id), pageW, pageH);
     for(const file of act.files){
       pdf.addPage();
       try{
@@ -318,8 +518,6 @@ document.getElementById('generate').onclick = async ()=>{
         w *= scale; h *= scale;
         const x = (pageW - w)/2;
         const y2 = (pageH - h)/2;
-        const fmt = /png/i.test(file.type) ? 'PNG' : 'JPEG';
-        // draw onto canvas to normalize any format (incl. webp/gif/bmp/svg)
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
@@ -336,9 +534,26 @@ document.getElementById('generate').onclick = async ()=>{
     }
   }
 
-  pdf.save('activities.pdf');
-  status.textContent = 'Done.';
+  if(previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = URL.createObjectURL(pdf.output('blob'));
+  document.getElementById('previewFrame').src = previewUrl;
+  document.getElementById('editor').hidden = true;
+  document.getElementById('preview').hidden = false;
+  status.textContent = 'Preview ready.';
   btn.disabled = false;
+};
+
+document.getElementById('backToEdit').onclick = ()=>{
+  document.getElementById('preview').hidden = true;
+  document.getElementById('editor').hidden = false;
+};
+
+document.getElementById('download').onclick = ()=>{
+  if(!previewUrl) return;
+  const link = document.createElement('a');
+  link.href = previewUrl;
+  link.download = 'activities.pdf';
+  link.click();
 };
 </script>
 </body>
