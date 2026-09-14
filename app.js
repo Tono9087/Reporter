@@ -397,6 +397,19 @@ function fieldValue(id, fallback){
   return document.getElementById(id).value.trim() || fallback;
 }
 
+function suggestedPdfName(){
+  const studentName = document.getElementById('studentName').value.trim();
+  const reportTitle = document.getElementById('coverTitle').value.trim();
+  const parts = [studentName, reportTitle]
+    .filter(Boolean)
+    .join('_')
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_-]+/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  return parts || 'activities';
+}
+
 function renderCoverDesignOptions(){
   const wrap = document.getElementById('coverDesignOptions');
   coverDesignOptions.forEach(opt => {
@@ -567,6 +580,7 @@ document.getElementById('generate').onclick = async ()=>{
 
   if(previewUrl) URL.revokeObjectURL(previewUrl);
   previewUrl = URL.createObjectURL(pdf.output('blob'));
+  document.getElementById('pdfName').value = suggestedPdfName();
   document.getElementById('previewFrame').src = previewUrl;
   document.getElementById('editor').hidden = true;
   document.getElementById('preview').hidden = false;
