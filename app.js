@@ -30,6 +30,16 @@ function addFiles(id, fileList){
   render();
 }
 
+function addPastedImages(id, clipboardData){
+  const imageFiles = [];
+  for(const item of clipboardData.items){
+    if(item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+    const blob = item.getAsFile();
+    if(blob) imageFiles.push(new File([blob], 'pasted-image-' + Date.now() + '.png', {type:blob.type}));
+  }
+  if(imageFiles.length) addFiles(id, imageFiles);
+}
+
 function removeFile(id, idx){
   const act = activities.find(a=>a.id===id);
   act.files.splice(idx,1);
@@ -93,7 +103,7 @@ function render(){
 
     const drop = document.createElement('div');
     drop.className = 'drop';
-    drop.textContent = 'Click or drop images here';
+    drop.textContent = 'Click, drop, or paste images here';
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = 'image/*';
@@ -107,6 +117,11 @@ function render(){
       e.preventDefault();
       drop.classList.remove('drag');
       addFiles(act.id, e.dataTransfer.files);
+    };
+    drop.tabIndex = 0;
+    drop.onpaste = e => {
+      e.preventDefault();
+      addPastedImages(act.id, e.clipboardData);
     };
 
     body.appendChild(drop);
@@ -323,6 +338,8 @@ document.getElementById('download').onclick = ()=>{
   if(!previewUrl) return;
   const link = document.createElement('a');
   link.href = previewUrl;
-  link.download = 'activities.pdf';
+  const requestedName = document.getElementById('pdfName').value.trim() || 'activities';
+  const safeName = requestedName.replace(/[\\/:*?"<>|]+/g, '-').replace(/\.pdf$/i, '').trim() || 'activities';
+  link.download = safeName + '.pdf';
   link.click();
 };

@@ -141,6 +141,15 @@ h1{
 .preview-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px;}
 .preview-head h2{font-size:22px;font-weight:400;margin:0;}
 .preview-actions{display:flex;gap:10px;}
+.filename-field{
+  display:flex;align-items:center;gap:6px;
+  color:var(--muted);font:12px Arial,sans-serif;
+}
+.filename-field input{
+  width:150px;padding:9px 8px;border:1px solid var(--line);
+  border-radius:2px;background:#fff;color:var(--ink);font:13px Arial,sans-serif;
+}
+.filename-field input:focus{outline:none;border-color:var(--accent);}
 .preview-actions button{
   font:13px Arial,sans-serif;padding:10px 15px;border:1px solid var(--accent);
   border-radius:2px;cursor:pointer;background:transparent;color:var(--accent);
