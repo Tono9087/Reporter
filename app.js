@@ -557,18 +557,20 @@ document.getElementById('generate').onclick = async ()=>{
         const maxH = pageH - margin*2;
         const compressionMax = 1600;
         const sourceScale = Math.min(1, compressionMax / Math.max(img.width, img.height));
-        let w = img.width * sourceScale, h = img.height * sourceScale;
-        const scale = Math.min(maxW/w, maxH/h);
-        w *= scale; h *= scale;
+        const compressedW = Math.round(img.width * sourceScale);
+        const compressedH = Math.round(img.height * sourceScale);
+        const scale = Math.min(maxW/img.width, maxH/img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
         const x = (pageW - w)/2;
         const y2 = (pageH - h)/2;
         const canvas = document.createElement('canvas');
-        canvas.width = Math.round(w);
-        canvas.height = Math.round(h);
+        canvas.width = compressedW;
+        canvas.height = compressedH;
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = '#fff';
         ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.drawImage(img,0,0);
+        ctx.drawImage(img,0,0,canvas.width,canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
         pdf.addImage(dataUrl, 'JPEG', x, y2, w, h);
       }catch(err){
