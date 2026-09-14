@@ -15,12 +15,36 @@
     <div class="cover-details">
       <h2>Cover page</h2>
       <div class="cover-fields">
-        <label>Student name<input id="studentName" type="text" placeholder="Enter student name"></label>
-        <label>Student group<input id="studentGroup" type="text" placeholder="Enter group"></label>
-        <label>Course name<input id="courseName" type="text" placeholder="Enter course name"></label>
+        <label>Student name
+          <div class="saved-input">
+            <input id="studentName" type="text" list="studentNameList" placeholder="Enter student name">
+            <button type="button" data-save-field="studentName" title="Save student name">Save</button>
+          </div>
+        </label>
+        <datalist id="studentNameList"></datalist>
+        <label>Student group
+          <div class="saved-input">
+            <input id="studentGroup" type="text" list="studentGroupList" placeholder="Enter group">
+            <button type="button" data-save-field="studentGroup" title="Save student group">Save</button>
+          </div>
+        </label>
+        <datalist id="studentGroupList"></datalist>
+        <label>Course name
+          <div class="saved-input">
+            <input id="courseName" type="text" list="courseNameList" placeholder="Enter course name">
+            <button type="button" data-save-field="courseName" title="Save course name">Save</button>
+          </div>
+        </label>
+        <datalist id="courseNameList"></datalist>
         <label>Unit<input id="unitName" type="text" placeholder="Enter unit"></label>
         <label>Title<input id="coverTitle" type="text" placeholder="Enter report title"></label>
-        <label>Teacher name<input id="teacherName" type="text" placeholder="Enter teacher name"></label>
+        <label>Teacher name
+          <div class="teacher-input">
+            <input id="teacherName" type="text" list="teacherList" placeholder="Enter teacher name">
+            <button type="button" data-save-field="teacherName" title="Save teacher">Save</button>
+          </div>
+        </label>
+        <datalist id="teacherList"></datalist>
         <label>Date<input id="coverDate" type="date"></label>
       </div>
       <div class="cover-design-wrap">

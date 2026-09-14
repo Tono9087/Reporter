@@ -1,7 +1,14 @@
 let activities = [];
 let counter = 0;
 let previewUrl = null;
+let activeActivityId = null;
 let coverDesign = 'modern';
+const savedFieldConfig = {
+  teacherName: {storageKey: 'reporter-teachers', listId: 'teacherList'},
+  studentName: {storageKey: 'reporter-student-names', listId: 'studentNameList'},
+  studentGroup: {storageKey: 'reporter-student-groups', listId: 'studentGroupList'},
+  courseName: {storageKey: 'reporter-course-names', listId: 'courseNameList'}
+};
 
 const coverDesignOptions = [
   {value:'modern', label:'Modern'},
@@ -48,6 +55,45 @@ function addPastedImages(id, clipboardData){
   if(imageFiles.length) addFiles(id, imageFiles);
 }
 
+function pasteImagesIntoActiveActivity(clipboardData){
+  const target = document.activeElement.closest?.('.activity');
+  const targetActivity = target
+    ? activities.find(activity => target.querySelector('.drop') && activity.id === Number(target.dataset.activityId))
+    : null;
+  const activity = targetActivity || activities.find(item => item.id === activeActivityId) || activities[0];
+  if(activity) addPastedImages(activity.id, clipboardData);
+}
+
+function setActiveActivity(id){
+  activeActivityId = id;
+  document.querySelectorAll('.activity').forEach(activity => {
+    activity.classList.toggle('active', Number(activity.dataset.activityId) === id);
+  });
+}
+
+function loadSavedField(fieldId){
+  const config = savedFieldConfig[fieldId];
+  const values = JSON.parse(localStorage.getItem(config.storageKey) || '[]');
+  const list = document.getElementById(config.listId);
+  list.innerHTML = '';
+  values.forEach(value => {
+    const option = document.createElement('option');
+    option.value = value;
+    list.appendChild(option);
+  });
+}
+
+function saveField(fieldId){
+  const config = savedFieldConfig[fieldId];
+  const input = document.getElementById(fieldId);
+  const value = input.value.trim();
+  if(!value) return;
+  const values = JSON.parse(localStorage.getItem(config.storageKey) || '[]');
+  if(!values.includes(value)) values.push(value);
+  localStorage.setItem(config.storageKey, JSON.stringify(values));
+  loadSavedField(fieldId);
+}
+
 function removeFile(id, idx){
   const act = activities.find(a=>a.id===id);
   act.files.splice(idx,1);
@@ -60,6 +106,8 @@ function render(){
   activities.forEach((act)=>{
     const div = document.createElement('div');
     div.className = 'activity';
+    div.dataset.activityId = act.id;
+    div.onmouseenter = () => setActiveActivity(act.id);
 
     const head = document.createElement('div');
     head.className = 'activity-head';
@@ -73,6 +121,13 @@ function render(){
     rm.textContent = 'Remove';
     rm.onclick = ()=>removeActivity(act.id);
     head.appendChild(input);
+    const pasteTarget = document.createElement('button');
+    pasteTarget.type = 'button';
+    pasteTarget.className = 'paste-target';
+    pasteTarget.textContent = 'Paste here';
+    pasteTarget.title = 'Make this activity the paste destination';
+    pasteTarget.onclick = () => setActiveActivity(act.id);
+    head.appendChild(pasteTarget);
     head.appendChild(rm);
 
     const body = document.createElement('div');
@@ -127,10 +182,7 @@ function render(){
       addFiles(act.id, e.dataTransfer.files);
     };
     drop.tabIndex = 0;
-    drop.onpaste = e => {
-      e.preventDefault();
-      addPastedImages(act.id, e.clipboardData);
-    };
+    drop.onfocus = () => setActiveActivity(act.id);
 
     body.appendChild(drop);
     body.appendChild(fileInput);
@@ -378,7 +430,20 @@ function drawCoverPage(pdf, pageW, pageH){
 document.getElementById('addActivity').onclick = addActivity;
 addActivity();
 renderCoverDesignOptions();
+setActiveActivity(activities[0].id);
+Object.keys(savedFieldConfig).forEach(loadSavedField);
 document.getElementById('coverDate').value = new Date().toISOString().slice(0, 10);
+document.querySelectorAll('[data-save-field]').forEach(button => {
+  button.onclick = () => saveField(button.dataset.saveField);
+});
+
+document.addEventListener('paste', event => {
+  if(document.getElementById('editor').hidden || !event.clipboardData?.items.length) return;
+  const hasImage = Array.from(event.clipboardData.items).some(item => item.kind === 'file' && item.type.startsWith('image/'));
+  if(!hasImage) return;
+  event.preventDefault();
+  pasteImagesIntoActiveActivity(event.clipboardData);
+});
 
 document.getElementById('generate').onclick = async ()=>{
   const status = document.getElementById('status');
