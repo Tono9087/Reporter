@@ -498,7 +498,7 @@ function drawCoverPage(pdf, pageW, pageH){
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(11);
   pdf.setTextColor(92, 92, 92);
-  pdf.text(teacher, 68, pageH - 84);
+  pdf.text('Teacher: ' + teacher, 68, pageH - 84);
   pdf.text(date, pageW - 68, pageH - 84, {align:'right'});
 }
 
