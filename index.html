@@ -12,6 +12,22 @@
   <section id="editor">
     <h1>Images to PDF</h1>
     <p class="sub">Group images into activities. Each activity gets a title page, then its images.</p>
+    <div class="cover-details">
+      <h2>Cover page</h2>
+      <div class="cover-fields">
+        <label>Student name<input id="studentName" type="text" placeholder="Enter student name"></label>
+        <label>Student group<input id="studentGroup" type="text" placeholder="Enter group"></label>
+        <label>Course name<input id="courseName" type="text" placeholder="Enter course name"></label>
+        <label>Unit<input id="unitName" type="text" placeholder="Enter unit"></label>
+        <label>Title<input id="coverTitle" type="text" placeholder="Enter report title"></label>
+        <label>Teacher name<input id="teacherName" type="text" placeholder="Enter teacher name"></label>
+        <label>Date<input id="coverDate" type="date"></label>
+      </div>
+      <div class="cover-design-wrap">
+        <span class="design-label">Choose a cover design</span>
+        <div class="cover-design-options" id="coverDesignOptions"></div>
+      </div>
+    </div>
     <div id="activities"></div>
     <button class="add-activity" id="addActivity">+ Add activity</button>
     <div class="actions">

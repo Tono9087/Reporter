@@ -1,6 +1,14 @@
 let activities = [];
 let counter = 0;
 let previewUrl = null;
+let coverDesign = 'modern';
+
+const coverDesignOptions = [
+  {value:'modern', label:'Modern'},
+  {value:'bold', label:'Bold'},
+  {value:'academic', label:'Academic'},
+  {value:'color', label:'Color block'}
+];
 
 const dividerOptions = [
   {value:'minimal', label:'Minimal'},
@@ -271,8 +279,106 @@ function loadImage(file){
   });
 }
 
+function fieldValue(id, fallback){
+  return document.getElementById(id).value.trim() || fallback;
+}
+
+function renderCoverDesignOptions(){
+  const wrap = document.getElementById('coverDesignOptions');
+  coverDesignOptions.forEach(opt => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'cover-design-option' + (coverDesign === opt.value ? ' selected' : '');
+    option.setAttribute('aria-pressed', coverDesign === opt.value ? 'true' : 'false');
+    const swatch = document.createElement('span');
+    swatch.className = 'cover-swatch cover-swatch-' + opt.value;
+    swatch.appendChild(document.createElement('span'));
+    if(opt.value === 'bold' || opt.value === 'color' || opt.value === 'academic'){
+      swatch.appendChild(document.createElement('span'));
+    }
+    const name = document.createElement('span');
+    name.textContent = opt.label;
+    option.appendChild(swatch);
+    option.appendChild(name);
+    option.onclick = () => {
+      coverDesign = opt.value;
+      renderCoverDesignOptions();
+    };
+    wrap.appendChild(option);
+  });
+}
+
+function drawCoverPage(pdf, pageW, pageH){
+  const student = fieldValue('studentName', 'Student name');
+  const group = fieldValue('studentGroup', 'Student group');
+  const course = fieldValue('courseName', 'Course name');
+  const unit = fieldValue('unitName', 'Unit');
+  const title = fieldValue('coverTitle', 'Report title');
+  const teacher = fieldValue('teacherName', 'Teacher name');
+  const date = fieldValue('coverDate', 'Date');
+
+  pdf.setFillColor(251, 250, 247);
+  pdf.rect(0, 0, pageW, pageH, 'F');
+  if(coverDesign === 'bold'){
+    pdf.setFillColor(28, 48, 42);
+    pdf.rect(0, 0, pageW, 116, 'F');
+    pdf.setFillColor(65, 98, 81);
+    pdf.rect(0, pageH - 68, pageW, 68, 'F');
+  } else if(coverDesign === 'academic'){
+    pdf.setDrawColor(65, 82, 67);
+    pdf.setLineWidth(1.5);
+    pdf.line(68, 72, pageW - 68, 72);
+    pdf.line(68, pageH - 72, pageW - 68, pageH - 72);
+    pdf.setDrawColor(168, 157, 142);
+    pdf.line(82, 92, 82, pageH - 92);
+  } else if(coverDesign === 'color'){
+    pdf.setFillColor(233, 238, 232);
+    pdf.rect(0, 0, pageW, pageH, 'F');
+    pdf.setFillColor(61, 90, 69);
+    pdf.rect(0, 0, 26, pageH, 'F');
+    pdf.setFillColor(28, 48, 42);
+    pdf.rect(54, 54, pageW - 108, 8, 'F');
+  } else {
+    pdf.setDrawColor(61, 90, 69);
+    pdf.setLineWidth(1.2);
+    pdf.line(54, 54, pageW - 54, 54);
+    pdf.line(54, pageH - 54, pageW - 54, pageH - 54);
+  }
+
+  const lightText = coverDesign === 'bold';
+  pdf.setTextColor(lightText ? 255 : 28, lightText ? 255 : 27, lightText ? 255 : 25);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(12);
+  pdf.text(student, 68, 88);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(11);
+  pdf.setTextColor(lightText ? 235 : 92, lightText ? 235 : 92, lightText ? 235 : 92);
+  pdf.text(group, 68, 108);
+
+  pdf.setTextColor(28, 27, 25);
+  pdf.setFont('times', 'bold');
+  pdf.setFontSize(28);
+  pdf.text(pdf.splitTextToSize(course, pageW - 140), pageW / 2, pageH / 2 - 58, {align:'center'});
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(14);
+  pdf.setTextColor(76, 97, 79);
+  pdf.text(unit, pageW / 2, pageH / 2 - 20, {align:'center'});
+  pdf.setFont('times', 'normal');
+  pdf.setFontSize(22);
+  pdf.setTextColor(28, 27, 25);
+  pdf.text(pdf.splitTextToSize(title, pageW - 140), pageW / 2, pageH / 2 + 28, {align:'center'});
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(11);
+  pdf.setTextColor(92, 92, 92);
+  pdf.text(teacher, 68, pageH - 84);
+  pdf.text(date, pageW - 68, pageH - 84, {align:'right'});
+}
+
 document.getElementById('addActivity').onclick = addActivity;
 addActivity();
+renderCoverDesignOptions();
+document.getElementById('coverDate').value = new Date().toISOString().slice(0, 10);
 
 document.getElementById('generate').onclick = async ()=>{
   const status = document.getElementById('status');
@@ -288,9 +394,10 @@ document.getElementById('generate').onclick = async ()=>{
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
 
+  drawCoverPage(pdf, pageW, pageH);
   for(const [index, act] of withImages.entries()){
     status.textContent = 'Adding: ' + act.title;
-    if(index > 0) pdf.addPage();
+    pdf.addPage();
     drawDividerPage(pdf, act, activities.findIndex(item => item.id === act.id), pageW, pageH);
     for(const file of act.files){
       pdf.addPage();
