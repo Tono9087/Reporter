@@ -19,6 +19,7 @@
           <div class="saved-input">
             <input id="studentName" type="text" list="studentNameList" placeholder="Enter student name">
             <button type="button" data-save-field="studentName" title="Save student name">Save</button>
+            <button type="button" class="clear-saved" data-clear-field="studentName" title="Clear saved student names">Clear</button>
           </div>
         </label>
         <datalist id="studentNameList"></datalist>
@@ -26,6 +27,7 @@
           <div class="saved-input">
             <input id="studentGroup" type="text" list="studentGroupList" placeholder="Enter group">
             <button type="button" data-save-field="studentGroup" title="Save student group">Save</button>
+            <button type="button" class="clear-saved" data-clear-field="studentGroup" title="Clear saved groups">Clear</button>
           </div>
         </label>
         <datalist id="studentGroupList"></datalist>
@@ -33,6 +35,7 @@
           <div class="saved-input">
             <input id="courseName" type="text" list="courseNameList" placeholder="Enter course name">
             <button type="button" data-save-field="courseName" title="Save course name">Save</button>
+            <button type="button" class="clear-saved" data-clear-field="courseName" title="Clear saved courses">Clear</button>
           </div>
         </label>
         <datalist id="courseNameList"></datalist>
@@ -42,6 +45,7 @@
           <div class="teacher-input">
             <input id="teacherName" type="text" list="teacherList" placeholder="Enter teacher name">
             <button type="button" data-save-field="teacherName" title="Save teacher">Save</button>
+            <button type="button" class="clear-saved" data-clear-field="teacherName" title="Clear saved teachers">Clear</button>
           </div>
         </label>
         <datalist id="teacherList"></datalist>
@@ -53,7 +57,10 @@
       </div>
     </div>
     <div id="activities"></div>
-    <button class="add-activity" id="addActivity">+ Add activity</button>
+    <div class="editor-actions">
+      <button class="add-activity" id="addActivity">+ Add activity</button>
+      <button class="reset-images" id="resetImages">Reset saved images</button>
+    </div>
     <div class="actions">
       <button id="generate">Generate PDF</button>
       <span id="status"></span>

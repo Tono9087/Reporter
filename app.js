@@ -3,6 +3,9 @@ let counter = 0;
 let previewUrl = null;
 let activeActivityId = null;
 let coverDesign = 'modern';
+let initializing = true;
+const imageDbName = 'reporter-images';
+const imageStoreName = 'activity-images';
 const savedFieldConfig = {
   teacherName: {storageKey: 'reporter-teachers', listId: 'teacherList'},
   studentName: {storageKey: 'reporter-student-names', listId: 'studentNameList'},
@@ -29,12 +32,14 @@ function addActivity(){
   const id = counter++;
   activities.push({id, title:'Activity ' + (activities.length + 1), files:[], design:'minimal'});
   render();
+  if(!initializing) persistImages();
 }
 
 function removeActivity(id){
   activities = activities.filter(a=>a.id!==id);
   activities.forEach((act, idx)=>{ act.title = act.title || 'Activity ' + (idx + 1); if(!act.title.startsWith('Activity')) act.title = 'Activity ' + (idx + 1); });
   render();
+  persistImages();
 }
 
 function addFiles(id, fileList){
@@ -43,6 +48,7 @@ function addFiles(id, fileList){
     if(f.type.startsWith('image/')) act.files.push(f);
   }
   render();
+  persistImages();
 }
 
 function addPastedImages(id, clipboardData){
@@ -98,6 +104,62 @@ function removeFile(id, idx){
   const act = activities.find(a=>a.id===id);
   act.files.splice(idx,1);
   render();
+  persistImages();
+}
+
+function openImageDb(){
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(imageDbName, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(imageStoreName);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function persistImages(){
+  try{
+    const db = await openImageDb();
+    const transaction = db.transaction(imageStoreName, 'readwrite');
+    const store = transaction.objectStore(imageStoreName);
+    store.clear();
+    activities.forEach((activity, activityIndex) => {
+      activity.files.forEach((file, fileIndex) => {
+        store.put({activityIndex, name:file.name, type:file.type, blob:file}, activityIndex + ':' + fileIndex);
+      });
+    });
+  }catch(error){
+    console.warn('Could not persist images.', error);
+  }
+}
+
+async function restoreImages(){
+  try{
+    const db = await openImageDb();
+    const request = db.transaction(imageStoreName, 'readonly').objectStore(imageStoreName).getAll();
+    request.onsuccess = () => {
+      request.result.forEach(record => {
+        while(!activities[record.activityIndex]){
+          const id = counter++;
+          activities.push({id, title:'Activity ' + (activities.length + 1), files:[], design:'minimal'});
+        }
+        activities[record.activityIndex].files.push(new File([record.blob], record.name, {type:record.type}));
+      });
+      render();
+    };
+  }catch(error){
+    console.warn('Could not restore images.', error);
+  }
+}
+
+async function resetImages(){
+  activities.forEach(activity => { activity.files = []; });
+  render();
+  try{
+    const db = await openImageDb();
+    db.transaction(imageStoreName, 'readwrite').objectStore(imageStoreName).clear();
+  }catch(error){
+    console.warn('Could not reset saved images.', error);
+  }
 }
 
 function render(){
@@ -429,13 +491,22 @@ function drawCoverPage(pdf, pageW, pageH){
 
 document.getElementById('addActivity').onclick = addActivity;
 addActivity();
+initializing = false;
 renderCoverDesignOptions();
 setActiveActivity(activities[0].id);
 Object.keys(savedFieldConfig).forEach(loadSavedField);
 document.getElementById('coverDate').value = new Date().toISOString().slice(0, 10);
+restoreImages();
 document.querySelectorAll('[data-save-field]').forEach(button => {
   button.onclick = () => saveField(button.dataset.saveField);
 });
+document.querySelectorAll('[data-clear-field]').forEach(button => {
+  button.onclick = () => {
+    localStorage.removeItem(savedFieldConfig[button.dataset.clearField].storageKey);
+    loadSavedField(button.dataset.clearField);
+  };
+});
+document.getElementById('resetImages').onclick = resetImages;
 
 document.addEventListener('paste', event => {
   if(document.getElementById('editor').hidden || !event.clipboardData?.items.length) return;
@@ -471,19 +542,21 @@ document.getElementById('generate').onclick = async ()=>{
         const margin = 30;
         const maxW = pageW - margin*2;
         const maxH = pageH - margin*2;
-        let w = img.width, h = img.height;
+        const compressionMax = 1600;
+        const sourceScale = Math.min(1, compressionMax / Math.max(img.width, img.height));
+        let w = img.width * sourceScale, h = img.height * sourceScale;
         const scale = Math.min(maxW/w, maxH/h);
         w *= scale; h *= scale;
         const x = (pageW - w)/2;
         const y2 = (pageH - h)/2;
         const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
+        canvas.width = Math.round(w);
+        canvas.height = Math.round(h);
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = '#fff';
         ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.drawImage(img,0,0);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
         pdf.addImage(dataUrl, 'JPEG', x, y2, w, h);
       }catch(err){
         pdf.setFontSize(12);

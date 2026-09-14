@@ -49,6 +49,15 @@ h1{
   color:var(--accent);padding:0 10px;cursor:pointer;font:12px Arial,sans-serif;
 }
 .teacher-input button:hover{background:var(--accent);color:var(--accent-ink);}
+.saved-input .clear-saved{border-color:var(--line);color:var(--muted);}
+.saved-input .clear-saved:hover{background:#8b3f3f;border-color:#8b3f3f;color:#fff;}
+.editor-actions{display:flex;align-items:center;gap:10px;margin-bottom:24px;}
+.editor-actions .add-activity{margin-bottom:0;}
+.reset-images{
+  border:1px solid var(--line);border-radius:2px;background:transparent;color:var(--muted);
+  padding:8px 12px;cursor:pointer;font:13px Arial,sans-serif;
+}
+.reset-images:hover{border-color:#8b3f3f;color:#8b3f3f;}
 .cover-design-wrap{margin-top:16px;}
 .cover-design-options{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
 .cover-design-option{
