@@ -502,6 +502,153 @@ function drawCoverPage(pdf, pageW, pageH){
   pdf.text(date, pageW - 68, pageH - 84, {align:'right'});
 }
 
+function buildIndexPages(pdf, allActivities, withImages, pageW, pageH){
+  const marginX = 64;
+  const numColWidth = 34;
+  const pageColWidth = 56;
+  const titleX = marginX + numColWidth;
+  const maxTitleW = pageW - titleX - marginX - pageColWidth;
+  const firstPageStartY = 192;
+  const contPageStartY = 152;
+  const contentBottomY = pageH - 92;
+  const lineHeight = 16;
+  const rowGap = 14;
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(12);
+
+  const pages = [[]];
+  let currentY = firstPageStartY;
+
+  const entries = withImages.map(act => {
+    const activityNumber = allActivities.findIndex(item => item.id === act.id) + 1;
+    const title = (act.title || 'Activity').trim() || 'Activity';
+    const lines = pdf.splitTextToSize(title, maxTitleW);
+    const rowHeight = Math.max(1, lines.length) * lineHeight + rowGap;
+    return {
+      activityNumber,
+      lines,
+      fileCount: act.files.length,
+      rowHeight,
+      startPage: 0
+    };
+  });
+
+  entries.forEach(entry => {
+    if(pages[pages.length - 1].length > 0 && currentY + entry.rowHeight > contentBottomY){
+      pages.push([]);
+      currentY = contPageStartY;
+    }
+    pages[pages.length - 1].push(entry);
+    currentY += entry.rowHeight;
+  });
+
+  let nextPage = 2 + pages.length;
+  entries.forEach(entry => {
+    entry.startPage = nextPage;
+    nextPage += 1 + entry.fileCount;
+  });
+
+  return { pages, totalActivities: entries.length, totalPages: nextPage - 1 };
+}
+
+function drawIndexPage(pdf, entries, pageIndex, totalActivities, totalPages, pageW, pageH){
+  const ruleX = 54;
+  const marginX = 64;
+  const titleX = marginX + 34;
+  const lineHeight = 16;
+
+  pdf.setFillColor(251, 250, 247);
+  pdf.rect(0, 0, pageW, pageH, 'F');
+  pdf.setDrawColor(61, 90, 69);
+  pdf.setLineWidth(1.2);
+  pdf.line(ruleX, 54, pageW - ruleX, 54);
+  pdf.line(ruleX, pageH - 54, pageW - ruleX, pageH - 54);
+
+  let headerY;
+  if(pageIndex === 0){
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10);
+    pdf.setTextColor(61, 90, 69);
+    pdf.text('CONTENTS', marginX, 82);
+
+    pdf.setFont('times', 'bold');
+    pdf.setFontSize(26);
+    pdf.setTextColor(28, 27, 25);
+    pdf.text('Index', marginX, 110);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.setTextColor(138, 132, 120);
+    pdf.text('Starting page of each activity', marginX, 128);
+    headerY = 156;
+  } else {
+    pdf.setFont('times', 'bold');
+    pdf.setFontSize(18);
+    pdf.setTextColor(28, 27, 25);
+    pdf.text('Index (continued)', marginX, 88);
+    headerY = 116;
+  }
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9);
+  pdf.setTextColor(138, 132, 120);
+  pdf.text('ACTIVITY', marginX, headerY);
+  pdf.text('PAGE', pageW - marginX, headerY, {align:'right'});
+
+  pdf.setDrawColor(216, 211, 200);
+  pdf.setLineWidth(0.75);
+  pdf.line(marginX, headerY + 8, pageW - marginX, headerY + 8);
+  let y = headerY + 36;
+
+  entries.forEach(entry => {
+    const numStr = String(entry.activityNumber).padStart(2, '0');
+    const pageText = String(entry.startPage);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10.5);
+    pdf.setTextColor(61, 90, 69);
+    pdf.text(numStr, marginX, y);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(12);
+    pdf.setTextColor(28, 27, 25);
+    entry.lines.forEach((line, lineIdx) => {
+      pdf.text(line, titleX, y + lineIdx * lineHeight);
+    });
+    const firstLineW = pdf.getTextWidth(entry.lines[0] || '');
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    pdf.setTextColor(28, 27, 25);
+    pdf.text(pageText, pageW - marginX, y, {align:'right'});
+    const pageTextW = pdf.getTextWidth(pageText);
+
+    if(entry.lines.length === 1){
+      const leaderStart = titleX + firstLineW + 10;
+      const leaderEnd = pageW - marginX - pageTextW - 10;
+      if(leaderEnd > leaderStart + 12){
+        pdf.setDrawColor(216, 211, 200);
+        pdf.setLineWidth(0.6);
+        pdf.line(leaderStart, y - 3, leaderEnd, y - 3);
+      }
+    }
+
+    if(typeof pdf.link === 'function'){
+      pdf.link(marginX - 4, y - 12, pageW - marginX * 2 + 8, entry.rowHeight - 4, {pageNumber: entry.startPage});
+    }
+
+    y += entry.rowHeight;
+  });
+
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(9.5);
+  pdf.setTextColor(138, 132, 120);
+  const actLabel = totalActivities === 1 ? 'activity' : 'activities';
+  pdf.text(totalActivities + ' ' + actLabel + ' · ' + totalPages + ' pages', marginX, pageH - 68);
+  pdf.text('Page ' + (pageIndex + 2) + ' of ' + totalPages, pageW - marginX, pageH - 68, {align:'right'});
+}
+
 document.getElementById('addActivity').onclick = addActivity;
 addActivity();
 initializing = false;
@@ -544,7 +691,12 @@ document.getElementById('generate').onclick = async ()=>{
   const pageH = pdf.internal.pageSize.getHeight();
 
   drawCoverPage(pdf, pageW, pageH);
-  for(const [index, act] of withImages.entries()){
+  const indexData = buildIndexPages(pdf, activities, withImages, pageW, pageH);
+  indexData.pages.forEach((entries, pageIndex) => {
+    pdf.addPage();
+    drawIndexPage(pdf, entries, pageIndex, indexData.totalActivities, indexData.totalPages, pageW, pageH);
+  });
+  for(const act of withImages){
     status.textContent = 'Adding: ' + act.title;
     pdf.addPage();
     drawDividerPage(pdf, act, activities.findIndex(item => item.id === act.id), pageW, pageH);
