@@ -30,16 +30,41 @@ const dividerOptions = [
   {value:'classic', label:'Classic'}
 ];
 
+function nextActivityNumber(){
+  let maxNum = 0;
+  activities.forEach(act => {
+    const parsed = parseFloat(act.number);
+    if(Number.isFinite(parsed) && parsed > maxNum){
+      maxNum = Math.floor(parsed);
+    }
+  });
+  return String(maxNum > 0 ? maxNum + 1 : activities.length + 1);
+}
+
+function getActivityNumber(act, index){
+  const raw = String(act?.number ?? '').trim();
+  return raw || String(index + 1);
+}
+
+function formatIndexNumber(activityNumber){
+  const text = String(activityNumber);
+  return /^\d+$/.test(text) ? text.padStart(2, '0') : text;
+}
+
 function addActivity(){
   const id = counter++;
-  activities.push({id, title:'Activity ' + (activities.length + 1), files:[], design:'minimal'});
+  const num = nextActivityNumber();
+  activities.push({id, number:num, customNumber:false, title:'Activity ' + num, files:[], design:'minimal'});
   render();
   if(!initializing) persistImages();
 }
 
 function removeActivity(id){
   activities = activities.filter(a=>a.id!==id);
-  activities.forEach((act, idx)=>{ act.title = act.title || 'Activity ' + (idx + 1); if(!act.title.startsWith('Activity')) act.title = 'Activity ' + (idx + 1); });
+  activities.forEach((act, idx)=>{
+    if(!act.customNumber) act.number = String(idx + 1);
+    if(!act.title) act.title = 'Activity ' + getActivityNumber(act, idx);
+  });
   render();
   persistImages();
 }
@@ -93,18 +118,24 @@ async function extractPdfPages(file){
   }
   ensurePdfJsWorker();
   const data = await file.arrayBuffer();
-  const pdfDoc = await window.pdfjsLib.getDocument({data}).promise;
+  const pdfDoc = await window.pdfjsLib.getDocument({
+    data,
+    cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+  }).promise;
   const pages = [];
   const sourceName = file.name || 'document.pdf';
   const baseName = sourceName.replace(/\.pdf$/i, '') || 'document';
   try{
     for(let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++){
       const page = await pdfDoc.getPage(pageNum);
+      let canvas = null;
       try{
         const baseViewport = page.getViewport({scale:1});
         const scale = 1600 / Math.max(baseViewport.width, baseViewport.height, 1);
         const viewport = page.getViewport({scale});
-        const canvas = document.createElement('canvas');
+        canvas = document.createElement('canvas');
         canvas.width = Math.max(1, Math.round(viewport.width));
         canvas.height = Math.max(1, Math.round(viewport.height));
         const ctx = canvas.getContext('2d');
@@ -118,6 +149,10 @@ async function extractPdfPages(file){
         pageFile.sourcePage = pageNum;
         pages.push(pageFile);
       } finally {
+        if(canvas){
+          canvas.width = 0;
+          canvas.height = 0;
+        }
         page.cleanup?.();
       }
     }
@@ -293,7 +328,8 @@ async function restoreImages(){
       records.forEach(record => {
         while(!activities[record.activityIndex]){
           const id = counter++;
-          activities.push({id, title:'Activity ' + (activities.length + 1), files:[], design:'minimal'});
+          const num = nextActivityNumber();
+          activities.push({id, number:num, customNumber:false, title:'Activity ' + num, files:[], design:'minimal'});
         }
         const restoredFile = new File([record.blob], record.name, {type:record.type});
         if(record.sourcePdf) restoredFile.sourcePdf = record.sourcePdf;
@@ -321,7 +357,7 @@ async function resetImages(){
 function render(){
   const wrap = document.getElementById('activities');
   wrap.innerHTML = '';
-  activities.forEach((act)=>{
+  activities.forEach((act, idx)=>{
     const div = document.createElement('div');
     div.className = 'activity';
     div.dataset.activityId = act.id;
@@ -329,6 +365,26 @@ function render(){
 
     const head = document.createElement('div');
     head.className = 'activity-head';
+
+    const numWrap = document.createElement('label');
+    numWrap.className = 'activity-num-wrap';
+    numWrap.title = 'Activity number (e.g. 1, 1.5, 2)';
+    const numLabel = document.createElement('span');
+    numLabel.textContent = '#';
+    const numInput = document.createElement('input');
+    numInput.type = 'text';
+    numInput.className = 'activity-num';
+    numInput.inputMode = 'decimal';
+    numInput.value = act.number ?? '';
+    numInput.placeholder = String(idx + 1);
+    numInput.setAttribute('aria-label', 'Activity number');
+    numInput.oninput = e => {
+      act.number = e.target.value;
+      act.customNumber = Boolean(e.target.value.trim());
+    };
+    numWrap.appendChild(numLabel);
+    numWrap.appendChild(numInput);
+
     const input = document.createElement('input');
     input.type = 'text';
     input.value = act.title;
@@ -338,6 +394,7 @@ function render(){
     rm.className = 'remove-act';
     rm.textContent = 'Remove';
     rm.onclick = ()=>removeActivity(act.id);
+    head.appendChild(numWrap);
     head.appendChild(input);
     const pasteTarget = document.createElement('button');
     pasteTarget.type = 'button';
@@ -413,7 +470,10 @@ function render(){
         t.className = 'thumb';
         t.title = f.sourcePdf ? (f.sourcePdf + ' (page ' + f.sourcePage + ')') : f.name;
         const img = document.createElement('img');
-        img.src = URL.createObjectURL(f);
+        const thumbUrl = URL.createObjectURL(f);
+        img.onload = () => URL.revokeObjectURL(thumbUrl);
+        img.onerror = () => URL.revokeObjectURL(thumbUrl);
+        img.src = thumbUrl;
         const x = document.createElement('div');
         x.className = 'x';
         x.textContent = '×';
@@ -439,7 +499,7 @@ function render(){
 
 function drawDividerPage(pdf, act, index, pageW, pageH) {
   const title = (act.title || 'Activity').trim() || 'Activity';
-  const activityNo = 'ACTIVITY ' + (index + 1);
+  const activityNo = 'ACTIVITY ' + getActivityNumber(act, index);
   const pagePad = 44;
 
   pdf.setFillColor(251, 250, 247);
@@ -471,11 +531,12 @@ function drawDividerPage(pdf, act, index, pageW, pageH) {
       pdf.roundedRect(pagePad, pagePad + 18, pageW - pagePad * 2, pageH - (pagePad * 2) - 36, 22, 22, 'S');
       pdf.setFillColor(245, 240, 233);
       pdf.roundedRect(pagePad + 18, pagePad + 38, pageW - pagePad * 2 - 36, pageH - (pagePad * 2) - 76, 18, 18, 'F');
-      pdf.setFillColor(31, 54, 44);
-      pdf.roundedRect(pagePad + 34, pagePad + 62, 120, 28, 8, 8, 'F');
-      pdf.setTextColor(255, 255, 255);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(10);
+      const badgeW = Math.max(120, pdf.getTextWidth(activityNo) + 36);
+      pdf.setFillColor(31, 54, 44);
+      pdf.roundedRect(pagePad + 34, pagePad + 62, badgeW, 28, 8, 8, 'F');
+      pdf.setTextColor(255, 255, 255);
       pdf.text(activityNo, pagePad + 52, pagePad + 82, {align:'left'});
       pdf.setTextColor(28, 27, 25);
       pdf.setFont('helvetica', 'bold');
@@ -493,11 +554,12 @@ function drawDividerPage(pdf, act, index, pageW, pageH) {
       pdf.setDrawColor(44, 59, 52);
       pdf.setLineWidth(1.5);
       pdf.rect(52, 52, pageW - 104, pageH - 104, 'S');
-      pdf.setFillColor(255, 255, 255);
-      pdf.roundedRect(pageW / 2 - 75, 80, 150, 26, 10, 10, 'F');
-      pdf.setTextColor(28, 27, 25);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(11);
+      const pillW = Math.max(150, pdf.getTextWidth(activityNo) + 36);
+      pdf.setFillColor(255, 255, 255);
+      pdf.roundedRect(pageW / 2 - pillW / 2, 80, pillW, 26, 10, 10, 'F');
+      pdf.setTextColor(28, 27, 25);
       pdf.text(activityNo, pageW / 2, 98, {align:'center'});
       pdf.setFont('times', 'bold');
       pdf.setFontSize(34);
@@ -546,12 +608,32 @@ function drawDividerPage(pdf, act, index, pageW, pageH) {
   }
 }
 
+function loadImageFromDataUrl(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(reader.error || new Error('Could not read file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function loadImage(file){
   return new Promise((resolve,reject)=>{
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = ()=>resolve(img);
-    img.onerror = reject;
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = ()=>{
+      URL.revokeObjectURL(url);
+      loadImageFromDataUrl(file).then(resolve, reject);
+    };
     img.src = url;
   });
 }
@@ -667,7 +749,14 @@ function drawCoverPage(pdf, pageW, pageH){
 
 function buildIndexPages(pdf, allActivities, withImages, pageW, pageH){
   const marginX = 64;
-  const numColWidth = 34;
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(10.5);
+  const maxNumW = withImages.reduce((max, act) => {
+    const idx = allActivities.findIndex(item => item.id === act.id);
+    const numStr = formatIndexNumber(getActivityNumber(act, idx));
+    return Math.max(max, pdf.getTextWidth(numStr));
+  }, 0);
+  const numColWidth = Math.max(34, Math.ceil(maxNumW) + 12);
   const pageColWidth = 56;
   const titleX = marginX + numColWidth;
   const maxTitleW = pageW - titleX - marginX - pageColWidth;
@@ -684,7 +773,8 @@ function buildIndexPages(pdf, allActivities, withImages, pageW, pageH){
   let currentY = firstPageStartY;
 
   const entries = withImages.map(act => {
-    const activityNumber = allActivities.findIndex(item => item.id === act.id) + 1;
+    const activityIndex = allActivities.findIndex(item => item.id === act.id);
+    const activityNumber = getActivityNumber(act, activityIndex);
     const title = (act.title || 'Activity').trim() || 'Activity';
     const lines = pdf.splitTextToSize(title, maxTitleW);
     const rowHeight = Math.max(1, lines.length) * lineHeight + rowGap;
@@ -712,13 +802,13 @@ function buildIndexPages(pdf, allActivities, withImages, pageW, pageH){
     nextPage += 1 + entry.fileCount;
   });
 
-  return { pages, totalActivities: entries.length, totalPages: nextPage - 1 };
+  return { pages, totalActivities: entries.length, totalPages: nextPage - 1, numColWidth };
 }
 
-function drawIndexPage(pdf, entries, pageIndex, totalActivities, totalPages, pageW, pageH){
+function drawIndexPage(pdf, entries, pageIndex, totalActivities, totalPages, pageW, pageH, numColWidth = 34){
   const ruleX = 54;
   const marginX = 64;
-  const titleX = marginX + 34;
+  const titleX = marginX + numColWidth;
   const lineHeight = 16;
 
   pdf.setFillColor(251, 250, 247);
@@ -765,7 +855,7 @@ function drawIndexPage(pdf, entries, pageIndex, totalActivities, totalPages, pag
   let y = headerY + 36;
 
   entries.forEach(entry => {
-    const numStr = String(entry.activityNumber).padStart(2, '0');
+    const numStr = formatIndexNumber(entry.activityNumber);
     const pageText = String(entry.startPage);
 
     pdf.setFont('helvetica', 'bold');
@@ -839,6 +929,35 @@ document.addEventListener('paste', event => {
   pasteImagesIntoActiveActivity(event.clipboardData);
 });
 
+async function fileToPdfJpegData(file, img, imgW, imgH){
+  if(file.sourcePdf && file.type === 'image/jpeg'){
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if(bytes.length > 0) return bytes;
+  }
+  const compressionMax = 1600;
+  const sourceScale = Math.min(1, compressionMax / Math.max(imgW, imgH));
+  const compressedW = Math.max(1, Math.round(imgW * sourceScale));
+  const compressedH = Math.max(1, Math.round(imgH * sourceScale));
+  const canvas = document.createElement('canvas');
+  canvas.width = compressedW;
+  canvas.height = compressedH;
+  try{
+    const ctx = canvas.getContext('2d');
+    if(!ctx) throw new Error('Canvas 2D context is unavailable.');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+    if(!dataUrl || !dataUrl.startsWith('data:image/jpeg')){
+      throw new Error('Could not encode image as JPEG.');
+    }
+    return dataUrl;
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+}
+
 document.getElementById('generate').onclick = async ()=>{
   const status = document.getElementById('status');
   const btn = document.getElementById('generate');
@@ -861,7 +980,7 @@ document.getElementById('generate').onclick = async ()=>{
   const indexData = buildIndexPages(pdf, activities, withImages, pageW, pageH);
   indexData.pages.forEach((entries, pageIndex) => {
     pdf.addPage();
-    drawIndexPage(pdf, entries, pageIndex, indexData.totalActivities, indexData.totalPages, pageW, pageH);
+    drawIndexPage(pdf, entries, pageIndex, indexData.totalActivities, indexData.totalPages, pageW, pageH, indexData.numColWidth);
   });
   for(const act of withImages){
     status.textContent = 'Adding: ' + act.title;
@@ -871,28 +990,21 @@ document.getElementById('generate').onclick = async ()=>{
       pdf.addPage();
       try{
         const img = await loadImage(file);
+        const imgW = img.naturalWidth || img.width;
+        const imgH = img.naturalHeight || img.height;
+        if(!imgW || !imgH) throw new Error('Image has zero dimensions.');
         const margin = 30;
         const maxW = pageW - margin*2;
         const maxH = pageH - margin*2;
-        const compressionMax = 1600;
-        const sourceScale = Math.min(1, compressionMax / Math.max(img.width, img.height));
-        const compressedW = Math.round(img.width * sourceScale);
-        const compressedH = Math.round(img.height * sourceScale);
-        const scale = Math.min(maxW/img.width, maxH/img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
+        const scale = Math.min(maxW/imgW, maxH/imgH);
+        const w = imgW * scale;
+        const h = imgH * scale;
         const x = (pageW - w)/2;
         const y2 = (pageH - h)/2;
-        const canvas = document.createElement('canvas');
-        canvas.width = compressedW;
-        canvas.height = compressedH;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.drawImage(img,0,0,canvas.width,canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
-        pdf.addImage(dataUrl, 'JPEG', x, y2, w, h);
+        const jpegData = await fileToPdfJpegData(file, img, imgW, imgH);
+        pdf.addImage(jpegData, 'JPEG', x, y2, w, h);
       }catch(err){
+        console.warn('Could not load page into PDF:', file.name, err);
         pdf.setFontSize(12);
         pdf.text('Could not load: ' + file.name, 40, 60);
       }

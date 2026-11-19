@@ -105,6 +105,32 @@ h1{
   outline:none;
   border-bottom:1px solid var(--accent);
 }
+.activity-num-wrap{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  color:var(--muted);
+  font:12px Arial,sans-serif;
+  border:1px solid var(--line);
+  border-radius:2px;
+  padding:3px 6px;
+  background:#fff;
+}
+.activity-num-wrap:focus-within{
+  border-color:var(--accent);
+  color:var(--accent);
+}
+.activity-head input.activity-num{
+  flex:0 0 auto;
+  width:42px;
+  font:13px Arial,sans-serif;
+  text-align:center;
+  border:none;
+  padding:1px 0;
+}
+.activity-head input.activity-num:focus{
+  border-bottom:none;
+}
 .activity.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(61,90,69,.12);}
 .paste-target{
   border:1px solid var(--accent);border-radius:2px;background:transparent;color:var(--accent);
