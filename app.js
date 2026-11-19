@@ -4,6 +4,8 @@ let previewUrl = null;
 let activeActivityId = null;
 let coverDesign = 'modern';
 let initializing = true;
+let pendingUploads = 0;
+const pdfWorkerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const imageDbName = 'reporter-images';
 const imageStoreName = 'activity-images';
 const savedFieldConfig = {
@@ -42,23 +44,159 @@ function removeActivity(id){
   persistImages();
 }
 
-function addFiles(id, fileList){
-  const act = activities.find(a=>a.id===id);
-  for(const f of fileList){
-    if(f.type.startsWith('image/')) act.files.push(f);
+function isPdfFile(file){
+  return Boolean(file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')));
+}
+
+function isImageFile(file){
+  return Boolean(file && file.type && file.type.startsWith('image/'));
+}
+
+function ensurePdfJsWorker(){
+  if(window.pdfjsLib?.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc){
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
   }
-  render();
-  persistImages();
+}
+
+function canvasToJpegBlob(canvas, quality){
+  return new Promise((resolve, reject) => {
+    const fallbackFromDataUrl = () => {
+      try{
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        const parts = dataUrl.split(',');
+        const mimeMatch = parts[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+        const binary = atob(parts[1]);
+        const bytes = new Uint8Array(binary.length);
+        for(let i = 0; i < binary.length; i++){
+          bytes[i] = binary.charCodeAt(i);
+        }
+        resolve(new Blob([bytes], {type:mime}));
+      }catch(err){
+        reject(err);
+      }
+    };
+    if(typeof canvas.toBlob === 'function'){
+      canvas.toBlob(blob => {
+        if(blob) resolve(blob);
+        else fallbackFromDataUrl();
+      }, 'image/jpeg', quality);
+    } else {
+      fallbackFromDataUrl();
+    }
+  });
+}
+
+async function extractPdfPages(file){
+  if(!window.pdfjsLib){
+    throw new Error('PDF library is not loaded.');
+  }
+  ensurePdfJsWorker();
+  const data = await file.arrayBuffer();
+  const pdfDoc = await window.pdfjsLib.getDocument({data}).promise;
+  const pages = [];
+  const sourceName = file.name || 'document.pdf';
+  const baseName = sourceName.replace(/\.pdf$/i, '') || 'document';
+  try{
+    for(let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++){
+      const page = await pdfDoc.getPage(pageNum);
+      try{
+        const baseViewport = page.getViewport({scale:1});
+        const scale = 1600 / Math.max(baseViewport.width, baseViewport.height, 1);
+        const viewport = page.getViewport({scale});
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(viewport.width));
+        canvas.height = Math.max(1, Math.round(viewport.height));
+        const ctx = canvas.getContext('2d');
+        if(!ctx) throw new Error('Canvas 2D context is unavailable.');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({canvasContext:ctx, viewport}).promise;
+        const blob = await canvasToJpegBlob(canvas, 0.85);
+        const pageFile = new File([blob], baseName + '-p' + pageNum + '.jpg', {type:'image/jpeg'});
+        pageFile.sourcePdf = sourceName;
+        pageFile.sourcePage = pageNum;
+        pages.push(pageFile);
+      } finally {
+        page.cleanup?.();
+      }
+    }
+  } finally {
+    await pdfDoc.destroy?.();
+  }
+  return pages;
+}
+
+async function addFiles(id, fileList){
+  const incoming = Array.from(fileList || []);
+  const act = activities.find(a=>a.id===id);
+  if(!act || !incoming.length) return;
+
+  const hasPdf = incoming.some(isPdfFile);
+  const generateBtn = document.getElementById('generate');
+  const status = document.getElementById('status');
+  let hasError = false;
+
+  if(hasPdf){
+    pendingUploads++;
+    act.pendingPdfCount = (act.pendingPdfCount || 0) + 1;
+    act.loadingPdf = true;
+    if(generateBtn) generateBtn.disabled = true;
+    render();
+  }
+
+  try{
+    for(const f of incoming){
+      if(!activities.includes(act)) break;
+      if(isImageFile(f)){
+        act.files.push(f);
+      } else if(isPdfFile(f)){
+        const pdfName = f.name || 'document.pdf';
+        if(status) status.textContent = 'Loading PDF: ' + pdfName + '...';
+        try{
+          const pages = await extractPdfPages(f);
+          if(activities.includes(act)) act.files.push(...pages);
+        }catch(error){
+          console.warn('Could not read PDF.', error);
+          hasError = true;
+          if(status) status.textContent = 'Could not read PDF: ' + pdfName;
+        }
+      }
+    }
+  } finally {
+    if(hasPdf){
+      pendingUploads = Math.max(0, pendingUploads - 1);
+      act.pendingPdfCount = Math.max(0, (act.pendingPdfCount || 1) - 1);
+      act.loadingPdf = act.pendingPdfCount > 0;
+      if(generateBtn && pendingUploads === 0) generateBtn.disabled = false;
+      if(!hasError && pendingUploads === 0 && status && status.textContent.startsWith('Loading PDF: ')){
+        status.textContent = '';
+      }
+    }
+    render();
+    await persistImages();
+  }
+}
+
+function isSupportedClipboardItem(item){
+  if(item.kind !== 'file') return false;
+  if(item.type.startsWith('image/') || item.type === 'application/pdf') return true;
+  return isPdfFile(item.getAsFile());
 }
 
 function addPastedImages(id, clipboardData){
-  const imageFiles = [];
+  const pastedFiles = [];
   for(const item of clipboardData.items){
-    if(item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+    if(item.kind !== 'file') continue;
     const blob = item.getAsFile();
-    if(blob) imageFiles.push(new File([blob], 'pasted-image-' + Date.now() + '.png', {type:blob.type}));
+    if(!blob) continue;
+    if(item.type.startsWith('image/')){
+      pastedFiles.push(new File([blob], blob.name || ('pasted-image-' + Date.now() + '.png'), {type:blob.type || 'image/png'}));
+    } else if(item.type === 'application/pdf' || isPdfFile(blob)){
+      pastedFiles.push(new File([blob], blob.name || ('pasted-pdf-' + Date.now() + '.pdf'), {type:'application/pdf'}));
+    }
   }
-  if(imageFiles.length) addFiles(id, imageFiles);
+  if(pastedFiles.length) addFiles(id, pastedFiles);
 }
 
 function pasteImagesIntoActiveActivity(clipboardData){
@@ -117,15 +255,27 @@ function openImageDb(){
 }
 
 async function persistImages(){
+  const records = [];
+  activities.forEach((activity, activityIndex) => {
+    activity.files.forEach((file, fileIndex) => {
+      records.push({
+        activityIndex,
+        fileIndex,
+        name:file.name,
+        type:file.type,
+        blob:file,
+        sourcePdf:file.sourcePdf || null,
+        sourcePage:file.sourcePage || null
+      });
+    });
+  });
   try{
     const db = await openImageDb();
     const transaction = db.transaction(imageStoreName, 'readwrite');
     const store = transaction.objectStore(imageStoreName);
     store.clear();
-    activities.forEach((activity, activityIndex) => {
-      activity.files.forEach((file, fileIndex) => {
-        store.put({activityIndex, name:file.name, type:file.type, blob:file}, activityIndex + ':' + fileIndex);
-      });
+    records.forEach(record => {
+      store.put(record, record.activityIndex + ':' + record.fileIndex);
     });
   }catch(error){
     console.warn('Could not persist images.', error);
@@ -137,12 +287,18 @@ async function restoreImages(){
     const db = await openImageDb();
     const request = db.transaction(imageStoreName, 'readonly').objectStore(imageStoreName).getAll();
     request.onsuccess = () => {
-      request.result.forEach(record => {
+      const records = request.result.slice().sort((a, b) =>
+        (a.activityIndex - b.activityIndex) || ((a.fileIndex ?? 0) - (b.fileIndex ?? 0))
+      );
+      records.forEach(record => {
         while(!activities[record.activityIndex]){
           const id = counter++;
           activities.push({id, title:'Activity ' + (activities.length + 1), files:[], design:'minimal'});
         }
-        activities[record.activityIndex].files.push(new File([record.blob], record.name, {type:record.type}));
+        const restoredFile = new File([record.blob], record.name, {type:record.type});
+        if(record.sourcePdf) restoredFile.sourcePdf = record.sourcePdf;
+        if(record.sourcePage) restoredFile.sourcePage = record.sourcePage;
+        activities[record.activityIndex].files.push(restoredFile);
       });
       render();
     };
@@ -227,11 +383,11 @@ function render(){
     body.appendChild(formatWrap);
 
     const drop = document.createElement('div');
-    drop.className = 'drop';
-    drop.textContent = 'Click, drop, or paste images here';
+    drop.className = 'drop' + (act.loadingPdf ? ' loading' : '');
+    drop.textContent = act.loadingPdf ? 'Loading PDF pages...' : 'Click, drop, or paste images or PDFs here';
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = 'image/*';
+    fileInput.accept = 'image/*,application/pdf,.pdf';
     fileInput.multiple = true;
     fileInput.style.display = 'none';
     fileInput.onchange = e => { addFiles(act.id, e.target.files); fileInput.value=''; };
@@ -255,6 +411,7 @@ function render(){
       act.files.forEach((f,idx)=>{
         const t = document.createElement('div');
         t.className = 'thumb';
+        t.title = f.sourcePdf ? (f.sourcePdf + ' (page ' + f.sourcePage + ')') : f.name;
         const img = document.createElement('img');
         img.src = URL.createObjectURL(f);
         const x = document.createElement('div');
@@ -262,6 +419,12 @@ function render(){
         x.textContent = '×';
         x.onclick = ()=>removeFile(act.id, idx);
         t.appendChild(img);
+        if(f.sourcePdf){
+          const badge = document.createElement('div');
+          badge.className = 'pdf-badge';
+          badge.textContent = 'PDF p.' + f.sourcePage;
+          t.appendChild(badge);
+        }
         t.appendChild(x);
         thumbs.appendChild(t);
       });
@@ -670,8 +833,8 @@ document.getElementById('resetImages').onclick = resetImages;
 
 document.addEventListener('paste', event => {
   if(document.getElementById('editor').hidden || !event.clipboardData?.items.length) return;
-  const hasImage = Array.from(event.clipboardData.items).some(item => item.kind === 'file' && item.type.startsWith('image/'));
-  if(!hasImage) return;
+  const hasSupportedFile = Array.from(event.clipboardData.items).some(isSupportedClipboardItem);
+  if(!hasSupportedFile) return;
   event.preventDefault();
   pasteImagesIntoActiveActivity(event.clipboardData);
 });
@@ -679,9 +842,13 @@ document.addEventListener('paste', event => {
 document.getElementById('generate').onclick = async ()=>{
   const status = document.getElementById('status');
   const btn = document.getElementById('generate');
+  if(pendingUploads > 0){
+    status.textContent = 'Please wait for PDF pages to finish loading.';
+    return;
+  }
   const withImages = activities.filter(a=>a.files.length);
   if(!withImages.length){
-    status.textContent = 'Add at least one image.';
+    status.textContent = 'Add at least one image or PDF.';
     return;
   }
   btn.disabled = true;
